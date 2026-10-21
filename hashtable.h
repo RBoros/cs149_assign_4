@@ -69,19 +69,16 @@ static inline struct nlist *lookup(char *s) {
 /**
  * This function creates and inserts a struct in hashtab or updates an existing
  * struct, adding n occurrences of name.
- * Assumption: name is a char*, n >= 1
+ * Assumption: name is a char*, n >= 1, and the total number of unique names
+ * stays within MAXNAMES (Assignment 1 assumes up to 100 distinct names).
  * Input parameters: name, n
- * Returns: 0 on success, -1 if the table already holds MAXNAMES
+ * Returns: nothing
 **/
-static inline int insertCount(char *name, int n) {
+static inline void insertCount(char *name, int n) {
     struct nlist *np = lookup(name);
     const int hVal = hash(name);
 
     if (np == NULL) { //name is not in a struct yet.
-        if (nameCount >= MAXNAMES) {
-            fprintf(stderr, "error: too many unique names\n");
-            return -1;
-        }
         np = malloc(sizeof(*np));
         if (np == NULL) {
             fprintf(stderr, "Allocation failed\n");
@@ -111,10 +108,6 @@ static inline int insertCount(char *name, int n) {
         //so insert name in existing struct names array.
         //also allocate more memory if needed and increment nCount
         if (found == 0) {
-            if (nameCount >= MAXNAMES) {
-                fprintf(stderr, "error: too many unique names\n");
-                return -1;
-            }
             if (np->nCount == np->nCapacity) {
                 np->nCapacity *= 2;
                 np->names = realloc(np->names, np->nCapacity * sizeof(char*));
@@ -127,16 +120,15 @@ static inline int insertCount(char *name, int n) {
             nameList[nameCount++] = strdup(name);
         }
     }
-    return 0;
 }
 
 /**
  * Adds one occurrence of name. Same behavior as the original insert().
  * Input parameters: name
- * Returns: 0 on success, or -1 on failure (table is full)
+ * Returns: nothing
 **/
-static inline int insert(char *name) {
-    return insertCount(name, 1);
+static inline void insert(char *name) {
+    insertCount(name, 1);
 }
 
 /**

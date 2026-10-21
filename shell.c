@@ -173,24 +173,18 @@ int main() {
 
         size_t region_size = ((MAXNAMES + 1) * sizeof(NameCountData));
 
-        int flag = 1;
         // inserts data from all child processes into hashtable
-        for (int i = 0; i < children && flag; i++) {
+        for (int i = 0; i < children; i++) {
             NameCountData *child_region = (NameCountData *)((char *)GLOBAL + i * region_size);
             for(int j = 0; j < MAXNAMES && child_region[j].name[0] != '\0'; j++){
-                if (insertCount(child_region[j].name, child_region[j].count) == -1) {
-                    flag = 0;       //the hashtable is full
-                    break;
-                }
+                insertCount(child_region[j].name, child_region[j].count);
             }
         }
 
-        //if every name is in the table
-        if (flag) {
-            NameCountData *sum_region = (NameCountData *)((char *)GLOBAL + children * region_size);
-            aggregate_regions(sum_region);
-            printSummation(sum_region);
-        }
+        // combine everything into the summation region and print it
+        NameCountData *sum_region = (NameCountData *)((char *)GLOBAL + children * region_size);
+        aggregate_regions(sum_region);
+        printSummation(sum_region);
 
         //Clearing
         clearTable();               //clears hashtable for next command

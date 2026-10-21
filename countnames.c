@@ -184,16 +184,7 @@ int main(int argc, char *argv[]) {
             );
         }
         else {
-            int full = insert(buffer);
-            if (full == -1) {
-                //Exceeds MAXNAMES
-                if (fp != stdin) {
-                    fclose(fp);
-                }
-                fclose(ep);
-                clearTable();
-                return 1;
-            }
+            insert(buffer);
         }
         lineNum++;
     }
