@@ -3,7 +3,7 @@
  * shell.c and countnames.c compile with no extra source file).
  * Author names: Ebsan Iqbal, Raymond Okolo
  * Author emails: ebsan.iqbal@sjsu.edu, raymond.okolo@sjsu.edu
- * Last modified date: 10/6/2026
+ * Last modified date: 10/21/2026
  * Creation date: 10/5/2026
  **/
 
@@ -71,16 +71,16 @@ static inline struct nlist *lookup(char *s) {
  * struct, adding n occurrences of name.
  * Assumption: name is a char*, n >= 1
  * Input parameters: name, n
- * Returns: nothing
+ * Returns: 0 on success, -1 if the table already holds MAXNAMES
 **/
-static inline void insertCount(char *name, int n) {
+static inline int insertCount(char *name, int n) {
     struct nlist *np = lookup(name);
     const int hVal = hash(name);
 
     if (np == NULL) { //name is not in a struct yet.
         if (nameCount >= MAXNAMES) {
             fprintf(stderr, "error: too many unique names\n");
-            exit(1);
+            return -1;
         }
         np = malloc(sizeof(*np));
         if (np == NULL) {
@@ -113,7 +113,7 @@ static inline void insertCount(char *name, int n) {
         if (found == 0) {
             if (nameCount >= MAXNAMES) {
                 fprintf(stderr, "error: too many unique names\n");
-                exit(1);
+                return -1;
             }
             if (np->nCount == np->nCapacity) {
                 np->nCapacity *= 2;
@@ -127,15 +127,16 @@ static inline void insertCount(char *name, int n) {
             nameList[nameCount++] = strdup(name);
         }
     }
+    return 0;
 }
 
 /**
  * Adds one occurrence of name. Same behavior as the original insert().
  * Input parameters: name
- * Returns: nothing
+ * Returns: 0 on success, or -1 on failure (table is full)
 **/
-static inline void insert(char *name) {
-    insertCount(name, 1);
+static inline int insert(char *name) {
+    return insertCount(name, 1);
 }
 
 /**

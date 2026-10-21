@@ -3,7 +3,7 @@
  * the results to compute a total names count and print to stdout.
  * Author names: Ebsan Iqbal, Raymond Okolo
  * Author emails: ebsan.iqbal@sjsu.edu, raymond.okolo@sjsu.edu
- * Last modified date: 10/10/2026
+ * Last modified date: 10/21/2026
  * Creation date: 10/5/2026
  **/
 
@@ -21,7 +21,7 @@
 #define MAX_LINE 1024   // max characters read per prompt line
 #define MAX_TOKENS 64   // max tokens (command + filenames) per line
 #define NAME_LEN 32     // max length of name
-#define SHARED_NAME "/shared_memory_i"
+
 
 
 //Message payload
@@ -35,8 +35,7 @@ typedef struct {
   * each process executes the countnames program
   * Returns: nothing
 **/
-void makeChildren(char* cmd, char* filename, int child_region){
-
+void makeChildren(char* cmd, char* filename, char *shared_name, int child_region){
     pid_t pid = fork();
 
     if(pid < 0){
@@ -50,16 +49,18 @@ void makeChildren(char* cmd, char* filename, int child_region){
         snprintf(childPidStr, sizeof(childPidStr), "%d", getpid());
         snprintf(childRegionStr, sizeof(childRegionStr), "%d", child_region);
 
-        execl(cmd, cmd, childPidStr, filename, childRegionStr, NULL);
+        execl(cmd, cmd, childPidStr, filename, shared_name, childRegionStr, NULL);
 
         // execl only returns if it failed
         fprintf(stderr,"error: cannot exec %s\n", cmd);
-        exit(1);
+        _exit(1);
     }
 }
 
-
-void aggregate(NameCountData *sum_region){
+/**
+ * Copies the merged hashtable into the summation region
+ */
+void aggregate_regions(NameCountData *sum_region){
     for(int i = 0; i < nameCount; i++) {
         struct nlist *np = lookup(nameList[i]);
         for(int j = 0; j < np->nCount; j++) {
@@ -76,7 +77,7 @@ void aggregate(NameCountData *sum_region){
   * This function prints the names and number of occurrences in a readable format.
   * Returns: nothing
 **/
-void printNames(NameCountData *sum_region){
+void printSummation(NameCountData *sum_region){
     for (int i = 0; i < MAXNAMES && sum_region[i].name[0] != '\0'; i++) {
         printf("%s: %d\n", sum_region[i].name, sum_region[i].count);
     }
@@ -85,6 +86,7 @@ void printNames(NameCountData *sum_region){
 int main() {
     char line[MAX_LINE];
 
+    int cmd_i = 0;            //for unique shared memory name
     while (1){
         printf("%% ");
         fflush(stdout);
@@ -113,11 +115,14 @@ int main() {
 
         int children = (count == 1) ? 1 : count - 1;
 
-        shm_unlink(SHARED_NAME);
-        int memFd = shm_open(SHARED_NAME, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+        char shared_name[64];
+        snprintf(shared_name, sizeof(shared_name), "/shared_memory_%d", cmd_i++);
+        shm_unlink(shared_name);
+
+        int memFd = shm_open(shared_name, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
         if (memFd == -1) {
             perror("shm_open");
-            exit(1);
+            continue;
         }
 
         // (bytes per entry * number of regions) + (summation region) * (structs per region plus null struct)
@@ -125,23 +130,26 @@ int main() {
 
         if (ftruncate(memFd, SIZE) == -1) {
             perror("ftruncate");
-            exit(1);
+            close(memFd);
+            shm_unlink(shared_name);
+            continue;
         }
 
         void *GLOBAL = mmap(NULL, SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, memFd, 0);
         if (GLOBAL == MAP_FAILED) {
             perror("mmap");
-            exit(1);
+            close(memFd);
+            shm_unlink(shared_name);
+            continue;
         }
-        printf("GLOBAL memory allocated at: %p\n", GLOBAL);
 
         if (count == 1) {
             // no files given: one child reads stdin ("1" tells countnames and 0 means first region)
-            makeChildren(tokens[0], "1", 0);
+            makeChildren(tokens[0], "1", shared_name, 0);
         }else {
             // one child per input file, all running in parallel
             for (int i = 1; i < count; i++) {
-                makeChildren(tokens[0], tokens[i], i - 1);
+                makeChildren(tokens[0], tokens[i], shared_name, i - 1);
             }
         }
 
@@ -165,25 +173,30 @@ int main() {
 
         size_t region_size = ((MAXNAMES + 1) * sizeof(NameCountData));
 
+        int flag = 1;
         // inserts data from all child processes into hashtable
-        for (int i = 0; i < children; i++) {
+        for (int i = 0; i < children && flag; i++) {
             NameCountData *child_region = (NameCountData *)((char *)GLOBAL + i * region_size);
             for(int j = 0; j < MAXNAMES && child_region[j].name[0] != '\0'; j++){
-                insertCount(child_region[j].name, child_region[j].count);
+                if (insertCount(child_region[j].name, child_region[j].count) == -1) {
+                    flag = 0;       //the hashtable is full
+                    break;
+                }
             }
         }
 
-        NameCountData *sum_region = (NameCountData *)((char *)GLOBAL + children * region_size);
-
-        aggregate(sum_region);
-        printNames(sum_region);
+        //if every name is in the table
+        if (flag) {
+            NameCountData *sum_region = (NameCountData *)((char *)GLOBAL + children * region_size);
+            aggregate_regions(sum_region);
+            printSummation(sum_region);
+        }
 
         //Clearing
-        clearTable();       //clears hashtable for next command
+        clearTable();               //clears hashtable for next command
         munmap(GLOBAL, SIZE);
         close(memFd);
-        shm_unlink(SHARED_NAME);
-
+        shm_unlink(shared_name);
     }
 
     return 0;
